@@ -34,9 +34,9 @@ TODO [Solr](Solr.md) or [Postgres](Postgres.md)...
 
 ## Links to the other docs
 
-  - [OAI-PMH](docs/OAI-PMH.md)
-  - [Export API](docs/ExportAPI.md)
-  - [Search API](docs/SearchAPI.md)
-  - [Solr](docs/Solr.md)
-  - [Postgres](docs/Postgres.md)
+  - [OAI-PMH](OAI-PMH.md)
+  - [Export API](ExportAPI.md)
+  - [Search API](SearchAPI.md)
+  - [Solr](Solr.md)
+  - [Postgres](Postgres.md)
 
