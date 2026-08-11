@@ -12,6 +12,10 @@ There are mainly two use cases:
 2. You only need a specific part of the metadata and possibly only of a (filtered) collection of datasets. 
 
 
+Automation could be done with several programming languages, but I would suggest to use Python. There are Python libraries out there that support the Dataverse APIs, but for simple tasks you could use the Python Requests library to do these API calls. 
+For testing and inspecting it is simpler to use the curl command-line tool, possibly together with jq to filter the JSON responses. Shell scripting (Bash) could then be used to repeat things and add some logic, but as soon as you want to make your scripts more complex these shell scripts might not be optimal. 
+
+
 ## How to get everything
 
 Use [OAI-PMH](OAI-PMH.md) to get the identifiers or landing pages, it should be possible to retrieve the metadata for each dataset in a next step using the [Export API](ExportAPI.md). 
