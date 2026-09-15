@@ -1,0 +1,234 @@
+"""Command-line interface for the OAI-PMH harvesting client."""
+
+import argparse
+import datetime
+import importlib.util
+import xml.etree.ElementTree as ET
+import os
+from pathlib import Path
+
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+try:
+    from rich_argparse import RichHelpFormatter
+except ImportError:
+    RichHelpFormatter = argparse.HelpFormatter
+
+
+def _load_oai_module():
+    module_path = Path(__file__).with_name("oai-pmh.py")
+    spec = importlib.util.spec_from_file_location("oai_pmh", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load OAI-PMH client from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+oai_module = _load_oai_module()
+OAIClient = oai_module.OAIClient
+retrieve_records = oai_module.retrieve_records
+get_save_dir_or_file_name = oai_module.get_save_dir_or_file_name
+OAI_NAMESPACE = oai_module.OAI_NAMESPACE
+OAI_DC_NAMESPACE = oai_module.OAI_DC_NAMESPACE
+DC_NAMESPACE = oai_module.DC_NAMESPACE
+XSI_NAMESPACE = oai_module.XSI_NAMESPACE
+
+ET.register_namespace("oai", OAI_NAMESPACE)
+ET.register_namespace("oai_dc", OAI_DC_NAMESPACE)
+ET.register_namespace("dc", DC_NAMESPACE)
+ET.register_namespace("xsi", XSI_NAMESPACE)
+
+console = Console()
+
+
+class RichArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("formatter_class", RichHelpFormatter)
+        super().__init__(*args, **kwargs)
+
+
+def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identifiers=False, quiet=False):
+    """Retrieve identifiers to a file, standard output, or both."""
+    if output_file is None and not show_identifiers:
+        raise ValueError("--show-identifiers is required when output_file is omitted.")
+
+    client = OAIClient(url)
+    identifier_count = 0
+    if not quiet and not show_identifiers:
+        console.print(f"Harvesting identifiers from [cyan]{url}[/cyan]")
+
+    file_handle = open(output_file, "w", encoding="utf-8") if output_file else None
+    try:
+        if quiet:
+            # the quiet mode simply writes identifiers to the file without any terminal output
+            for identifier in client.iter_identifiers(from_date=from_date):
+                file_handle.write(identifier + "\n")
+                identifier_count += 1
+        elif show_identifiers:
+            for identifier in client.iter_identifiers():
+                if file_handle:
+                    file_handle.write(identifier + "\n")
+                identifier_count += 1
+                print(identifier)
+        else:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TextColumn("[cyan]{task.completed} identifiers"),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Writing OAI-PMH pages", total=None)
+                for identifiers in client.iter_identifier_pages(from_date=from_date):
+                    file_handle.write("\n".join(identifiers) + "\n")
+                    identifier_count += len(identifiers)
+                    progress.update(task, advance=len(identifiers))
+    finally:
+        if file_handle:
+            file_handle.close()
+
+    if output_file and not quiet and not show_identifiers:
+        console.print(
+            f"[green]Completed.[/green] Wrote {identifier_count} identifiers to "
+            f"[cyan]{output_file}[/cyan]"
+        )
+    return identifier_count
+
+def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None):
+    client = OAIClient(url)
+    # create the dir if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    records_count = 0
+    # implement a progress bar similar to the identifiers retrieval
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TextColumn("[cyan]{task.completed} records"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Writing OAI-PMH records", total=None)
+        for record_page in client.iter_record_pages(metadata_prefix=metadata_prefix, from_date=from_date):
+            for record in record_page:
+                # extract the identifier from the record if available
+                identifier_element = record.find('{http://www.openarchives.org/OAI/2.0/}header/{http://www.openarchives.org/OAI/2.0/}identifier')
+                identifier = identifier_element.text if identifier_element is not None else f"record_{records_count + 1}"
+                
+                file_name = f"{get_save_dir_or_file_name(identifier)}_{metadata_prefix}.xml"
+                output_file = f"{output_dir}/{file_name}"
+
+                ET.indent(record, space="  ")
+                with open(output_file, "w", encoding="utf-8") as file_handle:
+                    file_handle.write(ET.tostring(record, encoding="unicode", method="xml"))
+                    file_handle.write("\n")
+                records_count += 1
+                progress.update(task, advance=1)
+
+    #retrieve_records(url, output_dir, metadata_prefix=metadata_prefix, from_date=from_date)
+    return records_count
+
+def add_from_date_argument(parser):
+    parser.add_argument(
+        "--from",
+        dest="from_date",
+        help="Specify the 'from' date for OAI-PMH harvesting (YYYY-MM-DD)",
+    )
+
+
+def validate_from_date(parser, from_date):
+    if from_date:
+        try:
+            datetime.datetime.strptime(from_date, "%Y-%m-%d")
+        except ValueError:
+            parser.error("Invalid date format for --from. Use YYYY-MM-DD.")
+
+
+def run_identifiers(arguments, parser):
+    if arguments.output_file is None and not arguments.show_identifiers:
+        parser.error("output_file is required unless --show-identifiers is used")
+
+    validate_from_date(parser, arguments.from_date)
+
+    if arguments.output_file and os.path.exists(arguments.output_file):
+        if not os.access(arguments.output_file, os.W_OK):
+            parser.error(f"Output file {arguments.output_file} is not writable")
+        if os.path.getsize(arguments.output_file) > 0 and not arguments.force:
+            parser.error(
+                f"Output file {arguments.output_file} is not empty; use --force to overwrite it"
+            )
+
+    cli_retrieve_identifiers(
+        arguments.url,
+        from_date=arguments.from_date,
+        output_file=arguments.output_file,
+        show_identifiers=arguments.show_identifiers,
+        quiet=arguments.quiet,
+    )
+
+
+def run_records(arguments, parser):
+    validate_from_date(parser, arguments.from_date)
+    cli_retrieve_records(
+        arguments.url,
+        arguments.output_dir,
+        metadata_prefix=arguments.metadata_prefix,
+        from_date=arguments.from_date,
+    )
+
+
+def main():
+    parser = RichArgumentParser(
+        description="Retrieve identifiers or records from an OAI-PMH endpoint."
+    )
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, parser_class=RichArgumentParser
+    )
+
+    identifiers_parser = subparsers.add_parser(
+        "identifiers",
+        help="Retrieve OAI-PMH identifiers",
+        description="Retrieve OAI-PMH identifiers and write them to a file or standard output.",
+    )
+    identifiers_parser.add_argument("url", help="Base URL of the OAI-PMH endpoint")
+    identifiers_parser.add_argument(
+        "-o", "--output-file",
+        nargs="?",
+        help="Optional file to receive one identifier per line",
+    )
+    output_options = identifiers_parser.add_mutually_exclusive_group()
+    output_options.add_argument("-s", "--show-identifiers", action="store_true", help="Print each identifier")
+    output_options.add_argument("-q", "--quiet", action="store_true", help="Suppress terminal output")
+    identifiers_parser.add_argument(
+        "-f", "--force",
+        action="store_true",
+        help="Overwrite an existing non-empty output file",
+    )
+    add_from_date_argument(identifiers_parser)
+
+    records_parser = subparsers.add_parser(
+        "records",
+        help="Retrieve OAI-PMH records",
+        description="Retrieve OAI-PMH records and write them as XML files.",
+    )
+    records_parser.add_argument("url", help="Base URL of the OAI-PMH endpoint")
+    records_parser.add_argument(
+        "-o", "--output-dir", required=True,
+        help="Directory to receive one XML file per record",
+    )
+    records_parser.add_argument(
+        "-m", "--metadata-prefix", default="oai_dc",
+        help="OAI-PMH metadata prefix (default: oai_dc)",
+    )
+    add_from_date_argument(records_parser)
+
+    arguments = parser.parse_args()
+    if arguments.command == "identifiers":
+        run_identifiers(arguments, identifiers_parser)
+    elif arguments.command == "records":
+        run_records(arguments, records_parser)
+
+
+if __name__ == "__main__":
+    main()

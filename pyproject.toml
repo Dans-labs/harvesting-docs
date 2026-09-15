@@ -1,0 +1,20 @@
+[project]
+name = "harvesting"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "paulboon", email = "paul.boon@dans.knaw.nl" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.34.2",
+    "rich>=15.0.0",
+]
+
+[project.scripts]
+harvesting-docs = "harvesting:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
