@@ -10,10 +10,12 @@ requires-python = ">=3.11"
 dependencies = [
     "requests>=2.34.2",
     "rich>=15.0.0",
+    "rich-argparse>=1.7.0",
 ]
 
 [project.scripts]
-harvesting-docs = "harvesting:main"
+oai-pmh = "harvesting:main"
+dv-export-api = "harvesting:main_dv_export_api"
 
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]

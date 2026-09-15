@@ -47,7 +47,10 @@ class OAIClient:
 
     def iter_identifier_pages(self, metadata_prefix='oai_dc', from_date=None, **kwargs):
         """Yield one list of identifiers for each server-defined OAI-PMH page."""
-        params = {'metadataPrefix': metadata_prefix, 'from': from_date, **kwargs}
+        params = {'metadataPrefix': metadata_prefix, **kwargs}
+        if from_date:
+            params['from'] = from_date
+
         while True:
             response = requests.get(self.base_url, params={'verb': 'ListIdentifiers', **params}, stream=True)
             response.raise_for_status()
