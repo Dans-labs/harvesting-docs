@@ -27,3 +27,14 @@ dist/
 # Local environment files
 .env
 .env.*
+
+# Application logs
+*.log
+logs/
+logs/*
+
+# Temporary and (meta)data dirs and files
+data/
+data/*
+tmp/
+tmp/*
