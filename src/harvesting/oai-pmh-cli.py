@@ -49,7 +49,7 @@ class RichArgumentParser(argparse.ArgumentParser):
         super().__init__(*args, **kwargs)
 
 
-def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identifiers=False, quiet=False):
+def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identifiers=False, quiet=False, oai_set=None):
     """Retrieve identifiers to a file, standard output, or both."""
     if output_file is None and not show_identifiers:
         raise ValueError("--show-identifiers is required when output_file is omitted.")
@@ -63,11 +63,11 @@ def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identif
     try:
         if quiet:
             # the quiet mode simply writes identifiers to the file without any terminal output
-            for identifier in client.iter_identifiers(from_date=from_date):
+            for identifier in client.iter_identifiers(from_date=from_date, oai_set=oai_set):
                 file_handle.write(identifier + "\n")
                 identifier_count += 1
         elif show_identifiers:
-            for identifier in client.iter_identifiers():
+            for identifier in client.iter_identifiers(oai_set=oai_set):
                 if file_handle:
                     file_handle.write(identifier + "\n")
                 identifier_count += 1
@@ -81,7 +81,7 @@ def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identif
                 console=console,
             ) as progress:
                 task = progress.add_task("Writing OAI-PMH pages", total=None)
-                for identifiers in client.iter_identifier_pages(from_date=from_date):
+                for identifiers in client.iter_identifier_pages(from_date=from_date, oai_set=oai_set):
                     file_handle.write("\n".join(identifiers) + "\n")
                     identifier_count += len(identifiers)
                     progress.update(task, advance=len(identifiers))
@@ -96,7 +96,7 @@ def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identif
         )
     return identifier_count
 
-def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None):
+def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, oai_set=None):
     client = OAIClient(url)
     # create the dir if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -110,7 +110,7 @@ def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=No
         console=console,
     ) as progress:
         task = progress.add_task("Writing OAI-PMH records", total=None)
-        for record_page in client.iter_record_pages(metadata_prefix=metadata_prefix, from_date=from_date):
+        for record_page in client.iter_record_pages(metadata_prefix=metadata_prefix, from_date=from_date, oai_set=oai_set):
             for record in record_page:
                 # extract the identifier from the record if available
                 identifier_element = record.find('{http://www.openarchives.org/OAI/2.0/}header/{http://www.openarchives.org/OAI/2.0/}identifier')
@@ -134,6 +134,14 @@ def add_from_date_argument(parser):
         "--from",
         dest="from_date",
         help="Specify the 'from' date for OAI-PMH harvesting (YYYY-MM-DD)",
+    )
+
+
+def add_set_argument(parser):
+    parser.add_argument(
+        "--set",
+        dest="oai_set",
+        help="Restrict harvesting to an OAI-PMH set (setSpec)",
     )
 
 
@@ -165,6 +173,7 @@ def run_identifiers(arguments, parser):
         output_file=arguments.output_file,
         show_identifiers=arguments.show_identifiers,
         quiet=arguments.quiet,
+        oai_set=arguments.oai_set,
     )
 
 
@@ -175,6 +184,7 @@ def run_records(arguments, parser):
         arguments.output_dir,
         metadata_prefix=arguments.metadata_prefix,
         from_date=arguments.from_date,
+        oai_set=arguments.oai_set,
     )
 
 
@@ -206,6 +216,7 @@ def main():
         help="Overwrite an existing non-empty output file",
     )
     add_from_date_argument(identifiers_parser)
+    add_set_argument(identifiers_parser)
 
     records_parser = subparsers.add_parser(
         "records",
@@ -222,6 +233,7 @@ def main():
         help="OAI-PMH metadata prefix (default: oai_dc)",
     )
     add_from_date_argument(records_parser)
+    add_set_argument(records_parser)
 
     arguments = parser.parse_args()
     if arguments.command == "identifiers":

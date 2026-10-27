@@ -32,24 +32,30 @@ class OAIClient:
     def list_sets(self):
         return self.request({'verb': 'ListSets'})
     
-    def list_records(self, metadata_prefix='oai_dc', **kwargs):
+    def list_records(self, metadata_prefix='oai_dc', oai_set=None, **kwargs):
         params = {'verb': 'ListRecords', 'metadataPrefix': metadata_prefix}
+        if oai_set:
+            params['set'] = oai_set
         params.update(kwargs)
         return self.request(params)
 
     def get_record(self, identifier, metadata_prefix='oai_dc'):
         return self.request({'verb': 'GetRecord', 'identifier': identifier, 'metadataPrefix': metadata_prefix})
 
-    def list_identifiers(self, metadata_prefix='oai_dc', **kwargs):
+    def list_identifiers(self, metadata_prefix='oai_dc', oai_set=None, **kwargs):
         params = {'verb': 'ListIdentifiers', 'metadataPrefix': metadata_prefix}
+        if oai_set:
+            params['set'] = oai_set
         params.update(kwargs)
         return self.request(params)
 
-    def iter_identifier_pages(self, metadata_prefix='oai_dc', from_date=None, **kwargs):
+    def iter_identifier_pages(self, metadata_prefix='oai_dc', from_date=None, oai_set=None, **kwargs):
         """Yield one list of identifiers for each server-defined OAI-PMH page."""
         params = {'metadataPrefix': metadata_prefix, **kwargs}
         if from_date:
             params['from'] = from_date
+        if oai_set:
+            params['set'] = oai_set
 
         while True:
             response = requests.get(self.base_url, params={'verb': 'ListIdentifiers', **params}, stream=True)
@@ -87,14 +93,16 @@ class OAIClient:
     # client = OAIClient("https://example.org/oai")
     # for identifier in client.iter_identifiers():
     #     print(identifier)
-    def iter_identifiers(self, metadata_prefix='oai_dc', from_date=None, **kwargs):
-        for identifiers in self.iter_identifier_pages(metadata_prefix, from_date=from_date, **kwargs):
+    def iter_identifiers(self, metadata_prefix='oai_dc', from_date=None, oai_set=None, **kwargs):
+        for identifiers in self.iter_identifier_pages(metadata_prefix, from_date=from_date, oai_set=oai_set, **kwargs):
             yield from identifiers
 
-    def iter_record_pages(self, metadata_prefix='oai_dc', from_date=None, **kwargs):
+    def iter_record_pages(self, metadata_prefix='oai_dc', from_date=None, oai_set=None, **kwargs):
         params = {'metadataPrefix': metadata_prefix}
         if from_date:
             params['from'] = from_date
+        if oai_set:
+            params['set'] = oai_set
         params.update(kwargs)
 
         while True:
@@ -120,8 +128,8 @@ class OAIClient:
                 break
             params = {'resumptionToken': token}
 
-    def iter_records(self, metadata_prefix='oai_dc', from_date=None, **kwargs):
-        for record_page in self.iter_record_pages(metadata_prefix, from_date=from_date, **kwargs):
+    def iter_records(self, metadata_prefix='oai_dc', from_date=None, oai_set=None, **kwargs):
+        for record_page in self.iter_record_pages(metadata_prefix, from_date=from_date, oai_set=oai_set, **kwargs):
             yield from record_page 
 
 
