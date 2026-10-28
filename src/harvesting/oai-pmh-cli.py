@@ -5,9 +5,12 @@ import datetime
 import importlib.util
 import xml.etree.ElementTree as ET
 import os
+import sys
 from pathlib import Path
 
+import requests
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 try:
@@ -28,7 +31,7 @@ def _load_oai_module():
 
 oai_module = _load_oai_module()
 OAIClient = oai_module.OAIClient
-retrieve_records = oai_module.retrieve_records
+OAIError = oai_module.OAIError
 get_save_dir_or_file_name = oai_module.get_save_dir_or_file_name
 OAI_NAMESPACE = oai_module.OAI_NAMESPACE
 OAI_DC_NAMESPACE = oai_module.OAI_DC_NAMESPACE
@@ -49,7 +52,7 @@ class RichArgumentParser(argparse.ArgumentParser):
         super().__init__(*args, **kwargs)
 
 
-def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identifiers=False, quiet=False, oai_set=None):
+def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identifiers=False, quiet=False, oai_set=None, metadata_prefix='oai_dc'):
     """Retrieve identifiers to a file, standard output, or both."""
     if output_file is None and not show_identifiers:
         raise ValueError("--show-identifiers is required when output_file is omitted.")
@@ -63,11 +66,11 @@ def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identif
     try:
         if quiet:
             # the quiet mode simply writes identifiers to the file without any terminal output
-            for identifier in client.iter_identifiers(from_date=from_date, oai_set=oai_set):
+            for identifier in client.iter_identifiers(metadata_prefix, from_date=from_date, oai_set=oai_set):
                 file_handle.write(identifier + "\n")
                 identifier_count += 1
         elif show_identifiers:
-            for identifier in client.iter_identifiers(oai_set=oai_set):
+            for identifier in client.iter_identifiers(metadata_prefix, from_date=from_date, oai_set=oai_set):
                 if file_handle:
                     file_handle.write(identifier + "\n")
                 identifier_count += 1
@@ -81,7 +84,7 @@ def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identif
                 console=console,
             ) as progress:
                 task = progress.add_task("Writing OAI-PMH pages", total=None)
-                for identifiers in client.iter_identifier_pages(from_date=from_date, oai_set=oai_set):
+                for identifiers in client.iter_identifier_pages(metadata_prefix, from_date=from_date, oai_set=oai_set):
                     file_handle.write("\n".join(identifiers) + "\n")
                     identifier_count += len(identifiers)
                     progress.update(task, advance=len(identifiers))
@@ -95,6 +98,7 @@ def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identif
             f"[cyan]{output_file}[/cyan]"
         )
     return identifier_count
+
 
 def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, oai_set=None):
     client = OAIClient(url)
@@ -113,9 +117,9 @@ def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=No
         for record_page in client.iter_record_pages(metadata_prefix=metadata_prefix, from_date=from_date, oai_set=oai_set):
             for record in record_page:
                 # extract the identifier from the record if available
-                identifier_element = record.find('{http://www.openarchives.org/OAI/2.0/}header/{http://www.openarchives.org/OAI/2.0/}identifier')
+                identifier_element = record.find(f"{{{OAI_NAMESPACE}}}header/{{{OAI_NAMESPACE}}}identifier")
                 identifier = identifier_element.text if identifier_element is not None else f"record_{records_count + 1}"
-                
+
                 file_name = f"{get_save_dir_or_file_name(identifier)}_{metadata_prefix}.xml"
                 output_file = f"{output_dir}/{file_name}"
 
@@ -125,15 +129,29 @@ def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=No
                     file_handle.write("\n")
                 records_count += 1
                 progress.update(task, advance=1)
-
-    #retrieve_records(url, output_dir, metadata_prefix=metadata_prefix, from_date=from_date)
     return records_count
+
+
+OAI_DATE_FORMATS = ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%SZ")
+
+
+def oai_date(value):
+    """Argparse type for the two OAI-PMH date granularities."""
+    for date_format in OAI_DATE_FORMATS:
+        try:
+            datetime.datetime.strptime(value, date_format)
+            return value
+        except ValueError:
+            pass
+    raise argparse.ArgumentTypeError("use YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ")
+
 
 def add_from_date_argument(parser):
     parser.add_argument(
         "--from",
         dest="from_date",
-        help="Specify the 'from' date for OAI-PMH harvesting (YYYY-MM-DD)",
+        type=oai_date,
+        help="Only harvest records changed since this date (YYYY-MM-DD or YYYY-MM-DDThh:mm:ssZ)",
     )
 
 
@@ -145,19 +163,16 @@ def add_set_argument(parser):
     )
 
 
-def validate_from_date(parser, from_date):
-    if from_date:
-        try:
-            datetime.datetime.strptime(from_date, "%Y-%m-%d")
-        except ValueError:
-            parser.error("Invalid date format for --from. Use YYYY-MM-DD.")
+def add_metadata_prefix_argument(parser):
+    parser.add_argument(
+        "-m", "--metadata-prefix", default="oai_dc",
+        help="OAI-PMH metadata prefix (default: oai_dc)",
+    )
 
 
 def run_identifiers(arguments, parser):
     if arguments.output_file is None and not arguments.show_identifiers:
         parser.error("output_file is required unless --show-identifiers is used")
-
-    validate_from_date(parser, arguments.from_date)
 
     if arguments.output_file and os.path.exists(arguments.output_file):
         if not os.access(arguments.output_file, os.W_OK):
@@ -174,11 +189,11 @@ def run_identifiers(arguments, parser):
         show_identifiers=arguments.show_identifiers,
         quiet=arguments.quiet,
         oai_set=arguments.oai_set,
+        metadata_prefix=arguments.metadata_prefix,
     )
 
 
 def run_records(arguments, parser):
-    validate_from_date(parser, arguments.from_date)
     cli_retrieve_records(
         arguments.url,
         arguments.output_dir,
@@ -204,7 +219,6 @@ def main():
     identifiers_parser.add_argument("url", help="Base URL of the OAI-PMH endpoint")
     identifiers_parser.add_argument(
         "-o", "--output-file",
-        nargs="?",
         help="Optional file to receive one identifier per line",
     )
     output_options = identifiers_parser.add_mutually_exclusive_group()
@@ -217,6 +231,7 @@ def main():
     )
     add_from_date_argument(identifiers_parser)
     add_set_argument(identifiers_parser)
+    add_metadata_prefix_argument(identifiers_parser)
 
     records_parser = subparsers.add_parser(
         "records",
@@ -228,18 +243,19 @@ def main():
         "-o", "--output-dir", required=True,
         help="Directory to receive one XML file per record",
     )
-    records_parser.add_argument(
-        "-m", "--metadata-prefix", default="oai_dc",
-        help="OAI-PMH metadata prefix (default: oai_dc)",
-    )
+    add_metadata_prefix_argument(records_parser)
     add_from_date_argument(records_parser)
     add_set_argument(records_parser)
 
     arguments = parser.parse_args()
-    if arguments.command == "identifiers":
-        run_identifiers(arguments, identifiers_parser)
-    elif arguments.command == "records":
-        run_records(arguments, records_parser)
+    try:
+        if arguments.command == "identifiers":
+            run_identifiers(arguments, identifiers_parser)
+        elif arguments.command == "records":
+            run_records(arguments, records_parser)
+    except (OAIError, requests.RequestException) as error:
+        console.print(f"[red]Error:[/red] {escape(str(error))}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
