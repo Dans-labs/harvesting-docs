@@ -36,6 +36,7 @@ export_dataset_metadata_for_pid = export_module.export_dataset_metadata_for_pid
 export_dataset_metadata_for_pids = export_module.export_dataset_metadata_for_pids
 count_pids = export_module.count_pids
 get_save_dir_or_file_name = export_module.get_save_dir_or_file_name
+EXPORT_EXTENSIONS = export_module.EXPORT_EXTENSIONS
 
 LOG_FILE = "dv-export-api.log"
 logger = logging.getLogger(__name__)
@@ -111,7 +112,15 @@ def delay_scale(value):
     return scale
 
 
-def cli_export_dataset_metadata_for_pids(url, pid_file, exporter, dirname, delay=DEFAULT_DELAY):
+def skip_extension(value):
+    """Argparse type for the optional value of --skip-existing: a known export extension."""
+    extension = value.lstrip(".").lower()
+    if extension not in EXPORT_EXTENSIONS:
+        raise argparse.ArgumentTypeError(f"{value!r} is not one of: {', '.join(EXPORT_EXTENSIONS)}")
+    return extension
+
+
+def cli_export_dataset_metadata_for_pids(url, pid_file, exporter, dirname, delay=DEFAULT_DELAY, skip_existing=False):
     """Export with a progress display; return a list of (pid, error) for the PIDs that failed."""
     total = count_pids(pid_file)
     summary = Table(title="Dataset Metadata Export", show_header=False)
@@ -122,6 +131,9 @@ def cli_export_dataset_metadata_for_pids(url, pid_file, exporter, dirname, delay
     summary.add_row("Exporter", exporter)
     summary.add_row("Output directory", dirname)
     summary.add_row("PIDs to process", str(total))
+    if skip_existing:
+        only = f".{skip_existing} files only" if isinstance(skip_existing, str) else "yes"
+        summary.add_row("Skip existing", only)
     console.print(summary)
 
     proceed = Prompt.ask(
@@ -153,6 +165,7 @@ def cli_export_dataset_metadata_for_pids(url, pid_file, exporter, dirname, delay
     ) as progress:
         task = progress.add_task("Exporting dataset metadata", total=total)
         stopped = False
+        skipped = 0
 
         def before_pid(dataset_pid):
             nonlocal stopped
@@ -160,6 +173,10 @@ def cli_export_dataset_metadata_for_pids(url, pid_file, exporter, dirname, delay
             if not stopped:
                 progress.update(task, description=f"Exporting {escape(dataset_pid)}")
             return stopped
+
+        def on_skip(dataset_pid):
+            nonlocal skipped
+            skipped += 1
 
         def after_pid(dataset_pid, error):
             if error:
@@ -172,11 +189,14 @@ def cli_export_dataset_metadata_for_pids(url, pid_file, exporter, dirname, delay
         failures = export_dataset_metadata_for_pids(
             url, pid_file, exporter, dirname, quiet=True,
             before_pid=before_pid, after_pid=after_pid, delay=delay,
+            skip_existing=skip_existing, on_skip=on_skip,
         )
         if stopped:
             return failures
         progress.update(task, description=f"Processed all {total} PIDs")
 
+    if skipped:
+        console.print(f"Skipped {skipped} of {total} PIDs that were already exported.")
     if failures:
         console.print(
             f"[bold red]Done, but {len(failures)} of {total} PIDs failed.[/bold red] "
@@ -211,6 +231,12 @@ def main():
              "1 is roughly 0.1-1 s, 0 disables the pause (default: %(default)s)"
     )
     parser.add_argument(
+        "--skip-existing", nargs="?", const=True, default=False, type=skip_extension, metavar="EXT",
+        help="Skip datasets that already have an exported file in the output directory, "
+             "for resuming an interrupted export. Give an extension (json, xml or txt) to count "
+             "only files with that extension; write it as --skip-existing=EXT or put the URL first"
+    )
+    parser.add_argument(
         "-q", "--quiet", default=False, action="store_true",
         help="Suppress terminal output"
     )
@@ -231,16 +257,21 @@ def main():
         if pid_file:
             if args.quiet:
                 failures = export_dataset_metadata_for_pids(
-                    url, pid_file, exporter, dirname, quiet=True, delay=args.delay
+                    url, pid_file, exporter, dirname, quiet=True, delay=args.delay,
+                    skip_existing=args.skip_existing,
                 )
                 for failed_pid, error in failures:
                     logger.error("Failed to export dataset PID %s: %s", failed_pid, error)
             else:
-                failures = cli_export_dataset_metadata_for_pids(url, pid_file, exporter, dirname, delay=args.delay)
+                failures = cli_export_dataset_metadata_for_pids(
+                    url, pid_file, exporter, dirname, delay=args.delay, skip_existing=args.skip_existing
+                )
             if failures:
                 sys.exit(1)
         else:
-            export_dataset_metadata_for_pid(url, dataset_pid, exporter, dirname, quiet=args.quiet)
+            export_dataset_metadata_for_pid(
+                url, dataset_pid, exporter, dirname, quiet=args.quiet, skip_existing=args.skip_existing
+            )
     except (requests.RequestException, OSError) as error:
         error_console.print(f"[red]Error:[/red] {escape(str(error))}")
         sys.exit(1)

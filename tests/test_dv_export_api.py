@@ -297,6 +297,134 @@ def test_no_delay_by_default(serve, tmp_path, monkeypatch):
     assert delays == [0]
 
 
+def test_skip_existing_does_not_request_pids_that_already_have_an_export(serve, tmp_path):
+    requests_made = serve(FakeResponse({"n": 2}))
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "doi_10.1_a.dataverse_json.json").write_text("old")
+    pid_file = tmp_path / "pids.txt"
+    pid_file.write_text("doi:10.1/a\ndoi:10.1/b\n")
+    skipped = []
+    DataverseExportClient("https://dv.example").export_dataset_metadata_for_pids(
+        str(pid_file), "dataverse_json", str(output_dir), quiet=True, skip_existing=True, on_skip=skipped.append
+    )
+    assert [params["persistentId"] for _, params in requests_made] == ["doi:10.1/b"]
+    assert skipped == ["doi:10.1/a"]
+    assert (output_dir / "doi_10.1_a.dataverse_json.json").read_text() == "old"
+
+
+@pytest.mark.parametrize("extension", ["json", "xml", "txt"])
+def test_skip_existing_matches_any_extension(serve, tmp_path, extension):
+    requests_made = serve()
+    (tmp_path / f"doi_10.1_a.ddi.{extension}").write_text("old")
+    result = DataverseExportClient("https://dv.example").export_dataset_metadata_for_pid(
+        "doi:10.1/a", "ddi", str(tmp_path), quiet=True, skip_existing=True
+    )
+    assert result is None
+    assert requests_made == []
+
+
+def test_without_skip_existing_existing_files_are_overwritten(serve, tmp_path):
+    serve(FakeResponse({"n": 2}))
+    (tmp_path / "doi_10.1_a.dataverse_json.json").write_text("old")
+    DataverseExportClient("https://dv.example").export_dataset_metadata_for_pid(
+        "doi:10.1/a", "dataverse_json", str(tmp_path), quiet=True
+    )
+    assert json.loads((tmp_path / "doi_10.1_a.dataverse_json.json").read_text()) == {"n": 2}
+
+
+def test_skip_existing_for_other_exporters_still_exports(serve, tmp_path):
+    requests_made = serve(FakeResponse({}))
+    (tmp_path / "doi_10.1_a.ddi.xml").write_text("old")
+    DataverseExportClient("https://dv.example").export_dataset_metadata_for_pid(
+        "doi:10.1/a", "dataverse_json", str(tmp_path), quiet=True, skip_existing=True
+    )
+    assert len(requests_made) == 1
+
+
+def test_skipped_pids_get_after_pid_and_no_delay(serve, tmp_path, monkeypatch):
+    serve(FakeResponse({}), FakeResponse({}))
+    delays = []
+    monkeypatch.setattr(dv_export, "nice_delay", delays.append)
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "doi_10.1_b.dataverse_json.json").write_text("old")
+    pid_file = tmp_path / "pids.txt"
+    pid_file.write_text("doi:10.1/a\ndoi:10.1/b\ndoi:10.1/c\n")
+    after = []
+    DataverseExportClient("https://dv.example").export_dataset_metadata_for_pids(
+        str(pid_file), "dataverse_json", str(output_dir), quiet=True, delay=0.5, skip_existing=True,
+        after_pid=lambda pid, error: after.append((pid, error)),
+    )
+    assert after == [("doi:10.1/a", None), ("doi:10.1/b", None), ("doi:10.1/c", None)]
+    assert delays == [0.5]  # only between the two PIDs that were actually requested
+
+
+def test_skip_existing_with_an_extension_only_counts_that_extension(serve, tmp_path):
+    requests_made = serve(FakeResponse({"n": 1}))
+    client = DataverseExportClient("https://dv.example")
+    (tmp_path / "doi_10.1_a.dataverse_json.xml").write_text("old")
+    client.export_dataset_metadata_for_pid("doi:10.1/a", "dataverse_json", str(tmp_path), quiet=True, skip_existing="json")
+    assert len(requests_made) == 1
+    assert (tmp_path / "doi_10.1_a.dataverse_json.json").exists()
+    result = client.export_dataset_metadata_for_pid(
+        "doi:10.1/a", "dataverse_json", str(tmp_path), quiet=True, skip_existing="json"
+    )
+    assert result is None
+    assert len(requests_made) == 1
+
+
+def test_skip_existing_with_an_extension_applies_to_pid_files_too(serve, tmp_path):
+    requests_made = serve(FakeResponse({}))
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "doi_10.1_a.dataverse_json.xml").write_text("old")
+    (output_dir / "doi_10.1_b.dataverse_json.json").write_text("old")
+    pid_file = tmp_path / "pids.txt"
+    pid_file.write_text("doi:10.1/a\ndoi:10.1/b\n")
+    skipped = []
+    DataverseExportClient("https://dv.example").export_dataset_metadata_for_pids(
+        str(pid_file), "dataverse_json", str(output_dir), quiet=True, skip_existing="json", on_skip=skipped.append
+    )
+    assert [params["persistentId"] for _, params in requests_made] == ["doi:10.1/a"]
+    assert skipped == ["doi:10.1/b"]
+
+
+def test_find_existing_export_can_be_limited_to_one_extension(tmp_path):
+    (tmp_path / "doi_10.1_a.ddi.xml").write_text("old")
+    assert dv_export.find_existing_export(str(tmp_path), "doi:10.1/a", "ddi") == str(tmp_path / "doi_10.1_a.ddi.xml")
+    assert dv_export.find_existing_export(str(tmp_path), "doi:10.1/a", "ddi", "xml") == str(tmp_path / "doi_10.1_a.ddi.xml")
+    assert dv_export.find_existing_export(str(tmp_path), "doi:10.1/a", "ddi", "json") is None
+
+
+def test_skipping_is_reported_unless_quiet(serve, tmp_path, capsys):
+    serve()
+    (tmp_path / "doi_10.1_a.dataverse_json.json").write_text("old")
+    DataverseExportClient("https://dv.example").export_dataset_metadata_for_pid(
+        "doi:10.1/a", "dataverse_json", str(tmp_path), skip_existing=True
+    )
+    assert "Skipping doi:10.1/a" in capsys.readouterr().out
+
+
+def test_an_interrupted_write_leaves_no_export_behind(monkeypatch, tmp_path):
+    class Boom(FakeResponse):
+        @property
+        def content(self):
+            return b"data"
+
+    monkeypatch.setattr(requests.Session, "get", lambda *args, **kwargs: Boom("x", content_type="application/xml"))
+
+    def fail_replace(source, destination):
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(dv_export.os, "replace", fail_replace)
+    with pytest.raises(OSError):
+        DataverseExportClient("https://dv.example").export_dataset_metadata_for_pid(
+            "doi:10.1/x", "ddi", str(tmp_path), quiet=True
+        )
+    assert dv_export.find_existing_export(str(tmp_path), "doi:10.1/x", "ddi") is None
+
+
 def test_count_pids_ignores_blank_lines(tmp_path):
     pid_file = tmp_path / "pids.txt"
     pid_file.write_text("a\n\n  \nb\n")
@@ -315,7 +443,7 @@ def test_module_level_wrappers_use_the_given_url(serve, tmp_path):
 
 def test_cli_puts_the_output_directory_in_the_current_directory_by_default(dv_cli, monkeypatch, tmp_path):
     seen = {}
-    monkeypatch.setattr(dv_cli, "export_dataset_metadata_for_pid", lambda url, pid, exporter, dirname, quiet: seen.update(dirname=dirname))
+    monkeypatch.setattr(dv_cli, "export_dataset_metadata_for_pid", lambda url, pid, exporter, dirname, quiet, skip_existing: seen.update(dirname=dirname))
     monkeypatch.setattr(sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-p", "doi:10.1/x"])
     dv_cli.main()
     assert Path(seen["dirname"]).resolve() == (tmp_path / "metadata_demo.dataverse.org").resolve()
@@ -323,7 +451,7 @@ def test_cli_puts_the_output_directory_in_the_current_directory_by_default(dv_cl
 
 def test_cli_parent_dir_contains_the_output_directory(dv_cli, monkeypatch, tmp_path):
     seen = {}
-    monkeypatch.setattr(dv_cli, "export_dataset_metadata_for_pid", lambda url, pid, exporter, dirname, quiet: seen.update(dirname=dirname))
+    monkeypatch.setattr(dv_cli, "export_dataset_metadata_for_pid", lambda url, pid, exporter, dirname, quiet, skip_existing: seen.update(dirname=dirname))
     parent = tmp_path / "exports" / "2026"
     monkeypatch.setattr(
         sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-p", "doi:10.1/x", "--parent-dir", str(parent)]
@@ -336,16 +464,17 @@ def test_cli_quiet_pid_file_export_passes_its_options_on(dv_cli, monkeypatch, tm
     seen = {}
     monkeypatch.setattr(
         dv_cli, "export_dataset_metadata_for_pids",
-        lambda url, pid_file, exporter, dirname, quiet, delay: seen.update(
-            url=url, pid_file=pid_file, exporter=exporter, quiet=quiet, delay=delay
+        lambda url, pid_file, exporter, dirname, quiet, delay, skip_existing: seen.update(
+            url=url, pid_file=pid_file, exporter=exporter, quiet=quiet, delay=delay, skip_existing=skip_existing
         ) or [],
     )
     monkeypatch.setattr(
-        sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-f", "pids.txt", "-e", "ddi", "-q", "--delay", "0.5"]
+        sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-f", "pids.txt", "-e", "ddi", "-q", "--delay", "0.5", "--skip-existing"]
     )
     dv_cli.main()
     assert seen == {
-        "url": "https://demo.dataverse.org", "pid_file": "pids.txt", "exporter": "ddi", "quiet": True, "delay": 0.5
+        "url": "https://demo.dataverse.org", "pid_file": "pids.txt", "exporter": "ddi", "quiet": True,
+        "delay": 0.5, "skip_existing": True,
     }
 
 
@@ -353,7 +482,7 @@ def test_cli_delay_defaults_to_a_short_pause(dv_cli, monkeypatch):
     seen = {}
     monkeypatch.setattr(
         dv_cli, "cli_export_dataset_metadata_for_pids",
-        lambda url, pid_file, exporter, dirname, delay: seen.update(delay=delay) or [],
+        lambda url, pid_file, exporter, dirname, delay, skip_existing: seen.update(delay=delay) or [],
     )
     monkeypatch.setattr(sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-f", "pids.txt"])
     dv_cli.main()
@@ -452,6 +581,58 @@ def test_interactive_export_reports_failures_and_still_exports_the_rest(dv_cli, 
     ]
 
 
+def test_interactive_export_with_skip_existing_reports_the_skipped_count(dv_cli, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(requests.Session, "get", lambda *args, **kwargs: FakeResponse({"n": 1}))
+    monkeypatch.setattr(dv_cli.Prompt, "ask", lambda *args, **kwargs: "y")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "doi_10.1_a.dataverse_json.json").write_text("old")
+    pid_file = tmp_path / "pids.txt"
+    pid_file.write_text("doi:10.1/a\ndoi:10.1/b\n")
+    failures = dv_cli.cli_export_dataset_metadata_for_pids(
+        "https://dv.example", str(pid_file), "dataverse_json", str(output_dir), delay=0, skip_existing=True
+    )
+    assert failures == []
+    assert "Skipped 1 of 2 PIDs" in capsys.readouterr().out
+    assert (output_dir / "doi_10.1_b.dataverse_json.json").exists()
+
+
+@pytest.mark.parametrize(
+    "extra_args, expected",
+    [
+        ([], False),
+        (["--skip-existing"], True),
+        (["--skip-existing", "-q"], True),
+        (["--skip-existing", "json"], "json"),
+        (["--skip-existing=.XML"], "xml"),
+    ],
+)
+def test_cli_skip_existing_takes_an_optional_extension(dv_cli, monkeypatch, extra_args, expected):
+    seen = {}
+
+    def fake(*args, skip_existing, **kwargs):
+        seen.update(skip=skip_existing)
+        return []
+
+    monkeypatch.setattr(dv_cli, "cli_export_dataset_metadata_for_pids", fake)
+    monkeypatch.setattr(dv_cli, "export_dataset_metadata_for_pids", fake)
+    monkeypatch.setattr(
+        sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-f", "pids.txt", *extra_args]
+    )
+    dv_cli.main()
+    assert seen == {"skip": expected}
+
+
+def test_cli_rejects_an_unknown_skip_extension(dv_cli, monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-f", "pids.txt", "--skip-existing", "pdf"]
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        dv_cli.main()
+    assert excinfo.value.code == 2
+    assert "json, xml, txt" in capsys.readouterr().err
+
+
 def test_cli_exits_nonzero_when_the_interactive_export_had_failures(dv_cli, monkeypatch):
     monkeypatch.setattr(
         dv_cli, "cli_export_dataset_metadata_for_pids", lambda *args, **kwargs: [("doi:10.1/x", "boom")]
@@ -499,7 +680,7 @@ def test_cli_accepts_a_zero_delay(dv_cli, monkeypatch):
     seen = {}
     monkeypatch.setattr(
         dv_cli, "cli_export_dataset_metadata_for_pids",
-        lambda url, pid_file, exporter, dirname, delay: seen.update(delay=delay) or [],
+        lambda url, pid_file, exporter, dirname, delay, skip_existing: seen.update(delay=delay) or [],
     )
     monkeypatch.setattr(
         sys, "argv", ["dv-export-api", "https://demo.dataverse.org", "-f", "pids.txt", "--delay", "0"]

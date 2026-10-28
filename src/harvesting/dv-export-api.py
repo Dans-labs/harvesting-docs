@@ -45,8 +45,15 @@ class DataverseExportClient:
         return response.text
 
     def export_dataset_metadata_for_pid(
-        self, dataset_pid, exporter, dirname, quiet=False
+        self, dataset_pid, exporter, dirname, quiet=False, skip_existing=False
     ):
+        """Write the export to dirname and return its path, or None if skipped as already existing."""
+        if skip_existing:
+            existing = find_existing_export(dirname, dataset_pid, exporter, _skip_extension(skip_existing))
+            if existing:
+                if not quiet:
+                    print(f"Skipping {dataset_pid}: {existing} already exists")
+                return None
         response = self._export(dataset_pid, exporter)
         if _is_json(response):
             content, extension = json.dumps(response.json(), indent=4).encode("utf-8"), "json"
@@ -54,38 +61,55 @@ class DataverseExportClient:
             # Raw bytes: an XML prolog may declare an encoding other than the one requests guesses.
             content = response.content
             extension = "xml" if "xml" in response.headers.get("Content-Type", "") else "txt"
-        file_name = f"{get_save_dir_or_file_name(dataset_pid)}.{get_save_dir_or_file_name(exporter)}.{extension}"
-        filename = os.path.join(dirname, file_name)
+        filename = os.path.join(dirname, export_file_name(dataset_pid, exporter, extension))
         os.makedirs(dirname, exist_ok=True)
         if not quiet:
             print(f"Writing metadata to file: {filename}")
-        with open(filename, "wb") as f_out:
+        # Atomic write: skip_existing would otherwise keep a file truncated by an interrupted run.
+        temp_filename = filename + ".part"
+        with open(temp_filename, "wb") as f_out:
             f_out.write(content)
+        os.replace(temp_filename, filename)
+        return filename
 
     def export_dataset_metadata_for_pids(
-        self, pid_file, exporter, dirname, quiet=False, before_pid=None, after_pid=None, delay=DEFAULT_DELAY
+        self, pid_file, exporter, dirname, quiet=False, before_pid=None, after_pid=None,
+        delay=DEFAULT_DELAY, skip_existing=False, on_skip=None
     ):
         """Export every PID in the file; return a list of (pid, error) for the ones that failed.
 
-        delay scales the randomized pause between PIDs (see nice_delay); 0 means no pause.
+        delay scales the randomized pause between requests (see nice_delay); 0 means no pause.
         before_pid(pid) is called first and stops the export when it returns True.
-        after_pid(pid, error) is called afterwards, with error None on success.
+        With skip_existing, PIDs that already have an export in dirname are not requested;
+        pass an extension such as "json" instead of True to count only files with that extension.
+        on_skip(pid) is called for skipped PIDs, and no pause is added for them.
+        after_pid(pid, error) is called afterwards, with error None on success or skip.
         """
         count = count_pids(pid_file)
         if not quiet:
             print(f"Total PIDs to process: {count}")
         failures = []
-        first = True
+        requested = False
         with open(pid_file, "r") as f:
             for line in f:
                 dataset_pid = line.strip()
                 if not dataset_pid:
                     continue
-                if not first:
-                    nice_delay(delay)
-                first = False
                 if before_pid and before_pid(dataset_pid):
                     break
+                if skip_existing and find_existing_export(
+                    dirname, dataset_pid, exporter, _skip_extension(skip_existing)
+                ):
+                    if not quiet:
+                        print(f"Skipping dataset PID: {dataset_pid} (already exported)")
+                    if on_skip:
+                        on_skip(dataset_pid)
+                    if after_pid:
+                        after_pid(dataset_pid, None)
+                    continue
+                if requested:
+                    nice_delay(delay)
+                requested = True
                 if not quiet:
                     print(f"Processing dataset PID: {dataset_pid}")
                 error = None
@@ -109,18 +133,22 @@ def dv_export_dataset_metadata(dataverse_url, dataset_pid, exporter):
 
 
 def export_dataset_metadata_for_pid(
-    url, dataset_pid, exporter, dirname, quiet=False, client=None
+    url, dataset_pid, exporter, dirname, quiet=False, client=None, skip_existing=False
 ):
     client = client or DataverseExportClient(url)
-    client.export_dataset_metadata_for_pid(dataset_pid, exporter, dirname, quiet=quiet)
+    return client.export_dataset_metadata_for_pid(
+        dataset_pid, exporter, dirname, quiet=quiet, skip_existing=skip_existing
+    )
 
 
 def export_dataset_metadata_for_pids(
-    url, pid_file, exporter, dirname, quiet=False, before_pid=None, after_pid=None, delay=0
+    url, pid_file, exporter, dirname, quiet=False, before_pid=None, after_pid=None,
+    delay=0, skip_existing=False, on_skip=None
 ):
     client = DataverseExportClient(url)
     return client.export_dataset_metadata_for_pids(
-        pid_file, exporter, dirname, quiet=quiet, before_pid=before_pid, after_pid=after_pid, delay=delay
+        pid_file, exporter, dirname, quiet=quiet, before_pid=before_pid, after_pid=after_pid,
+        delay=delay, skip_existing=skip_existing, on_skip=on_skip
     )
 
 
@@ -137,6 +165,30 @@ def nice_delay(scale_max_delay=DEFAULT_DELAY):
 
 def _is_json(response):
     return "application/json" in response.headers.get("Content-Type", "")
+
+
+EXPORT_EXTENSIONS = ("json", "xml", "txt")
+
+
+def export_file_name(dataset_pid, exporter, extension):
+    return f"{get_save_dir_or_file_name(dataset_pid)}.{get_save_dir_or_file_name(exporter)}.{extension}"
+
+
+def find_existing_export(dirname, dataset_pid, exporter, extension=None):
+    """Return the path of an existing export for the PID, or None.
+
+    Any known extension counts, unless extension is given.
+    """
+    for candidate in (extension,) if extension else EXPORT_EXTENSIONS:
+        path = os.path.join(dirname, export_file_name(dataset_pid, exporter, candidate))
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _skip_extension(skip_existing):
+    # skip_existing is True (any extension counts) or an extension string (only that one counts).
+    return skip_existing if isinstance(skip_existing, str) else None
 
 
 def count_pids(pid_file):

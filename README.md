@@ -83,7 +83,9 @@ uv run dv-export-api https://demo.dataverse.org -f ./data/pids.txt --parent-dir 
 
 Metadata is written to a `metadata_<host>` directory, created in the current directory or in `--parent-dir` if given.
 
-When exporting a PID file, a short randomized pause is inserted between requests. Scale it with `--delay` (default `0.2`; `1` is roughly 0.1-1 s per request, `0` disables it).
+When exporting a PID file, `--delay` adds a randomized pause between requests (default `0`, no pause; `1` is roughly 0.1-1 s per request).
+
+Add `--skip-existing` to resume an interrupted export: datasets that already have an exported file in the output directory are not requested again. By default an existing file counts whatever its extension (`.json`, `.xml` or `.txt`), since the extension is only known once the server responds. Give an extension as value to count only files with that extension, for example `--skip-existing=json` (the `=` form, or putting the URL first, keeps the value from being mistaken for the URL). Files are written atomically, so an interrupted run never leaves a truncated export behind.
 
 For more details on the harvesting concepts and available APIs, see [docs/Overview.md](docs/Overview.md).
 
