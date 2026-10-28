@@ -78,7 +78,12 @@ Example usage:
 uv run dv-export-api --help
 uv run dv-export-api https://demo.dataverse.org -p doi:10.7910/DVN/TJCLKP
 uv run dv-export-api https://demo.dataverse.org -f ./data/pids.txt -e dataverse_json
+uv run dv-export-api https://demo.dataverse.org -f ./data/pids.txt --parent-dir ./exports
 ```
+
+Metadata is written to a `metadata_<host>` directory, created in the current directory or in `--parent-dir` if given.
+
+When exporting a PID file, a short randomized pause is inserted between requests. Scale it with `--delay` (default `0.2`; `1` is roughly 0.1-1 s per request, `0` disables it).
 
 For more details on the harvesting concepts and available APIs, see [docs/Overview.md](docs/Overview.md).
 

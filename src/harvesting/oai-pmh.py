@@ -1,4 +1,4 @@
-# Harvesting client code for OAI-PMH (Open Archives Initiative Protocol for Metadata Harvesting) 
+# Harvesting client code for OAI-PMH (Open Archives Initiative Protocol for Metadata Harvesting)
 
 import requests
 import urllib3
@@ -27,6 +27,7 @@ RECORD_TAG = f"{{{OAI_NAMESPACE}}}record"
 
 REQUEST_TIMEOUT = 60  # seconds
 MAX_RETRIES = 3
+
 
 class OAIError(Exception):
     """The server answered with an OAI-PMH <error> element."""
@@ -127,16 +128,16 @@ class OAIClient:
             if not token:
                 break
             params = {'resumptionToken': token}
-    
+
     def identify(self):
         return self.request({'verb': 'Identify'})
-    
+
     def list_metadata_formats(self):
         return self.request({'verb': 'ListMetadataFormats'})
 
     def list_sets(self):
         return self.request({'verb': 'ListSets'})
-    
+
     def list_records(self, metadata_prefix='oai_dc', from_date=None, oai_set=None):
         params = {'verb': 'ListRecords', **self._list_params(metadata_prefix, from_date, oai_set)}
         return self.request(params)
@@ -185,6 +186,7 @@ def retrieve_identifiers(url, output_file=None, from_date=None, oai_set=None,
                 on_identifier(identifier)
     return count
 
+
 # TODO: add retrieve records functionality, given the identifiers from a file
 def retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, oai_set=None, on_record=None):
     """Write each record to its own XML file, calling on_record for each; return the count."""
@@ -206,6 +208,7 @@ def retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, 
         if on_record:
             on_record(record)
     return count
+
 
 def get_save_dir_or_file_name(name):
     # Replace path separators and characters that are invalid in Windows file names.
