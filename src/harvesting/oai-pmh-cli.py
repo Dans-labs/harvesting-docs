@@ -6,6 +6,7 @@ import importlib.util
 import xml.etree.ElementTree as ET
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import requests
@@ -30,9 +31,9 @@ def _load_oai_module():
 
 
 oai_module = _load_oai_module()
-OAIClient = oai_module.OAIClient
 OAIError = oai_module.OAIError
-get_save_dir_or_file_name = oai_module.get_save_dir_or_file_name
+retrieve_identifiers = oai_module.retrieve_identifiers
+retrieve_records = oai_module.retrieve_records
 OAI_NAMESPACE = oai_module.OAI_NAMESPACE
 OAI_DC_NAMESPACE = oai_module.OAI_DC_NAMESPACE
 DC_NAMESPACE = oai_module.DC_NAMESPACE
@@ -52,84 +53,47 @@ class RichArgumentParser(argparse.ArgumentParser):
         super().__init__(*args, **kwargs)
 
 
+@contextmanager
+def progress_bar(description, unit):
+    """Yield a callback that advances a progress bar by one item."""
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TextColumn(f"[cyan]{{task.completed}} {unit}"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(description, total=None)
+        yield lambda _item: progress.update(task, advance=1)
+
+
 def cli_retrieve_identifiers(url, from_date=None, output_file=None, show_identifiers=False, quiet=False, oai_set=None, metadata_prefix='oai_dc'):
     """Retrieve identifiers to a file, standard output, or both."""
     if output_file is None and not show_identifiers:
         raise ValueError("--show-identifiers is required when output_file is omitted.")
 
-    client = OAIClient(url)
-    identifier_count = 0
-    if not quiet and not show_identifiers:
-        console.print(f"Harvesting identifiers from [cyan]{url}[/cyan]")
+    options = dict(output_file=output_file, from_date=from_date, oai_set=oai_set, metadata_prefix=metadata_prefix)
+    if quiet:
+        return retrieve_identifiers(url, **options)
+    if show_identifiers:
+        return retrieve_identifiers(url, on_identifier=print, **options)
 
-    file_handle = open(output_file, "w", encoding="utf-8") if output_file else None
-    try:
-        if quiet:
-            # the quiet mode simply writes identifiers to the file without any terminal output
-            for identifier in client.iter_identifiers(metadata_prefix, from_date=from_date, oai_set=oai_set):
-                file_handle.write(identifier + "\n")
-                identifier_count += 1
-        elif show_identifiers:
-            for identifier in client.iter_identifiers(metadata_prefix, from_date=from_date, oai_set=oai_set):
-                if file_handle:
-                    file_handle.write(identifier + "\n")
-                identifier_count += 1
-                print(identifier)
-        else:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                TextColumn("[cyan]{task.completed} identifiers"),
-                TimeElapsedColumn(),
-                console=console,
-            ) as progress:
-                task = progress.add_task("Writing OAI-PMH pages", total=None)
-                for identifiers in client.iter_identifier_pages(metadata_prefix, from_date=from_date, oai_set=oai_set):
-                    file_handle.write("\n".join(identifiers) + "\n")
-                    identifier_count += len(identifiers)
-                    progress.update(task, advance=len(identifiers))
-    finally:
-        if file_handle:
-            file_handle.close()
-
-    if output_file and not quiet and not show_identifiers:
-        console.print(
-            f"[green]Completed.[/green] Wrote {identifier_count} identifiers to "
-            f"[cyan]{output_file}[/cyan]"
-        )
+    console.print(f"Harvesting identifiers from [cyan]{url}[/cyan]")
+    with progress_bar("Writing OAI-PMH identifiers", "identifiers") as advance:
+        identifier_count = retrieve_identifiers(url, on_identifier=advance, **options)
+    console.print(
+        f"[green]Completed.[/green] Wrote {identifier_count} identifiers to "
+        f"[cyan]{output_file}[/cyan]"
+    )
     return identifier_count
 
 
 def cli_retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, oai_set=None):
-    client = OAIClient(url)
-    # create the dir if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-    records_count = 0
-    # implement a progress bar similar to the identifiers retrieval
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TextColumn("[cyan]{task.completed} records"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Writing OAI-PMH records", total=None)
-        for record_page in client.iter_record_pages(metadata_prefix=metadata_prefix, from_date=from_date, oai_set=oai_set):
-            for record in record_page:
-                # extract the identifier from the record if available
-                identifier_element = record.find(f"{{{OAI_NAMESPACE}}}header/{{{OAI_NAMESPACE}}}identifier")
-                identifier = identifier_element.text if identifier_element is not None else f"record_{records_count + 1}"
-
-                file_name = f"{get_save_dir_or_file_name(identifier)}_{metadata_prefix}.xml"
-                output_file = f"{output_dir}/{file_name}"
-
-                ET.indent(record, space="  ")
-                with open(output_file, "w", encoding="utf-8") as file_handle:
-                    file_handle.write(ET.tostring(record, encoding="unicode", method="xml"))
-                    file_handle.write("\n")
-                records_count += 1
-                progress.update(task, advance=1)
-    return records_count
+    with progress_bar("Writing OAI-PMH records", "records") as advance:
+        return retrieve_records(
+            url, output_dir, metadata_prefix=metadata_prefix, from_date=from_date, oai_set=oai_set,
+            on_record=advance,
+        )
 
 
 OAI_DATE_FORMATS = ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%SZ")

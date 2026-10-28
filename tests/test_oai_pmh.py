@@ -133,6 +133,35 @@ def test_retrieve_identifiers_writes_one_per_line(serve, tmp_path):
     assert output.read_text() == "a\nb\n"
 
 
+def test_retrieve_identifiers_reports_each_one_and_counts(serve):
+    serve(page(header("a"), header("b")))
+    seen = []
+    assert oai_pmh.retrieve_identifiers("http://x/oai", on_identifier=seen.append) == 2
+    assert seen == ["a", "b"]
+
+
+def test_retrieve_records_writes_one_file_per_record(serve, tmp_path):
+    record = "<record><header><identifier>oai:x:1</identifier></header></record>"
+    serve(OAI.format(f"<ListRecords>{record}</ListRecords>"))
+    seen = []
+    assert oai_pmh.retrieve_records("http://x/oai", tmp_path, on_record=seen.append) == 1
+    assert len(seen) == 1
+    assert "oai:x:1" in (tmp_path / "oai_x_1_oai_dc.xml").read_text()
+
+
+def test_cli_show_identifiers_prints_them(serve, capsys):
+    serve(page(header("a"), header("b")))
+    assert oai_pmh_cli.cli_retrieve_identifiers("http://x/oai", show_identifiers=True) == 2
+    assert capsys.readouterr().out == "a\nb\n"
+
+
+def test_cli_progress_mode_writes_the_file(serve, tmp_path):
+    serve(page(header("a"), header("b")))
+    output = tmp_path / "ids.txt"
+    assert oai_pmh_cli.cli_retrieve_identifiers("http://x/oai", output_file=str(output)) == 2
+    assert output.read_text() == "a\nb\n"
+
+
 def test_identifiers_command_passes_its_options_on(monkeypatch, tmp_path):
     seen = {}
     monkeypatch.setattr(oai_pmh_cli, "cli_retrieve_identifiers", lambda url, **kwargs: seen.update(url=url, **kwargs))

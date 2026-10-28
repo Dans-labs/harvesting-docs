@@ -41,9 +41,35 @@ Example usage:
 
 ```bash
 uv run oai-pmh --help
-uv run oai-pmh identifiers https://demo.dataverse.org/oai
+uv run oai-pmh identifiers https://demo.dataverse.org/oai --output-file ids.txt
+uv run oai-pmh identifiers https://demo.dataverse.org/oai --show-identifiers
 uv run oai-pmh records https://demo.dataverse.org/oai --output-dir ./records
 ```
+
+Both commands accept these options:
+
+| Option | Description |
+| --- | --- |
+| `-m`, `--metadata-prefix` | Metadata format to harvest (default: `oai_dc`) |
+| `--set` | Only harvest the given OAI-PMH set (setSpec) |
+| `--from` | Only harvest records changed since this date, as `YYYY-MM-DD` or `YYYY-MM-DDThh:mm:ssZ` (the server must support that granularity) |
+
+`identifiers` writes one identifier per line to `--output-file`, prints them with `--show-identifiers`, or does both. `--quiet` suppresses terminal output, and `--force` overwrites a non-empty output file. Deleted records are skipped.
+
+Example, harvesting one set in a given format since a date:
+
+```bash
+uv run oai-pmh records https://demo.dataverse.org/oai -o ./records -m oai_datacite --set controlTestSet --from 2026-01-01
+```
+
+Example getting the identifiers only
+
+```bash
+uv run oai-pmh identifiers https://demo.dataverse.org/oai -o ./data/pids.txt -m oai_datacite --set controlTestSet --from 2026-01-01
+```
+
+Requests time out after 60 seconds, and throttled or temporarily failing responses (HTTP 429, 502, 503, 504) are retried up to 3 times. OAI-PMH errors, such as an unknown set, are reported as an error message with exit code 1.
+
 
 ### Dataverse export CLI
 
@@ -51,7 +77,7 @@ Example usage:
 ```bash
 uv run dv-export-api --help
 uv run dv-export-api https://demo.dataverse.org -p doi:10.7910/DVN/TJCLKP
-uv run dv-export-api https://demo.dataverse.org -f pids.txt -e dataverse_json
+uv run dv-export-api https://demo.dataverse.org -f ./data/pids.txt -e dataverse_json
 ```
 
 For more details on the harvesting concepts and available APIs, see [docs/Overview.md](docs/Overview.md).

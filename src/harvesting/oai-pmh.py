@@ -5,6 +5,7 @@ import urllib3
 import xml.etree.ElementTree as ET
 import os
 import re
+from contextlib import nullcontext
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -170,23 +171,31 @@ class OAIClient:
             yield from record_page
 
 
-def retrieve_identifiers(url, output_file, from_date=None, oai_set=None):
+def retrieve_identifiers(url, output_file=None, from_date=None, oai_set=None,
+                         metadata_prefix='oai_dc', on_identifier=None):
+    """Write identifiers to output_file (if given), calling on_identifier for each; return the count."""
     client = OAIClient(url)
-    with open(output_file, "w", encoding="utf-8") as file_handle:
-        for identifier in client.iter_identifiers(from_date=from_date, oai_set=oai_set):
-            file_handle.write(identifier + "\n")
-            # maybe log something in a file or database record?
-            #console.print(f"Retrieved identifier: {identifier}", markup=False)
+    count = 0
+    with (open(output_file, "w", encoding="utf-8") if output_file else nullcontext()) as file_handle:
+        for identifier in client.iter_identifiers(metadata_prefix, from_date=from_date, oai_set=oai_set):
+            if file_handle:
+                file_handle.write(identifier + "\n")
+            count += 1
+            if on_identifier:
+                on_identifier(identifier)
+    return count
 
 # TODO: add retrieve records functionality, given the identifiers from a file
-def retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, oai_set=None):
+def retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, oai_set=None, on_record=None):
+    """Write each record to its own XML file, calling on_record for each; return the count."""
     client = OAIClient(url)
     os.makedirs(output_dir, exist_ok=True)
-    records = client.iter_records(metadata_prefix=metadata_prefix, from_date=from_date, oai_set=oai_set)
-    for i, record in enumerate(records, start=1):
+    count = 0
+    for record in client.iter_records(metadata_prefix=metadata_prefix, from_date=from_date, oai_set=oai_set):
+        count += 1
         # extract the identifier from the record if available
         identifier_element = record.find(f"{HEADER_TAG}/{IDENTIFIER_TAG}")
-        identifier = identifier_element.text if identifier_element is not None else f"record_{i}"
+        identifier = identifier_element.text if identifier_element is not None else f"record_{count}"
 
         file_name = f"{get_save_dir_or_file_name(identifier)}_{metadata_prefix}.xml"
         output_file = os.path.join(output_dir, file_name)
@@ -194,8 +203,9 @@ def retrieve_records(url, output_dir, metadata_prefix='oai_dc', from_date=None, 
         with open(output_file, "w", encoding="utf-8") as file_handle:
             file_handle.write(ET.tostring(record, encoding="unicode"))
             file_handle.write("\n")
-            # maybe log something in a file or database record?
-            #console.print(f"Retrieved record: {record}", markup=False)
+        if on_record:
+            on_record(record)
+    return count
 
 def get_save_dir_or_file_name(name):
     # Replace path separators and characters that are invalid in Windows file names.

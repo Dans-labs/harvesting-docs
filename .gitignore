@@ -38,3 +38,7 @@ data/
 data/*
 tmp/
 tmp/*
+work/
+work/*
+records/
+records/*
