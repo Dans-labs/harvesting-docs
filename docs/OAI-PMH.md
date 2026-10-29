@@ -72,7 +72,7 @@ Harvest regularly with the `from` argument set to (a bit before) the time of you
 
 ## Using the code in this repository
 
-The client is in [src/harvesting/oai-pmh.py](../src/harvesting/oai-pmh.py) and the command-line interface in [src/harvesting/oai-pmh-cli.py](../src/harvesting/oai-pmh-cli.py). See the [README](../README.md) for installation with `uv`.
+The client is in [src/harvesting/oai-pmh.py](https://github.com/Dans-labs/harvesting-docs/blob/master/src/harvesting/oai-pmh.py) and the command-line interface in [src/harvesting/oai-pmh-cli.py](https://github.com/Dans-labs/harvesting-docs/blob/master/src/harvesting/oai-pmh-cli.py). See the [README](https://github.com/Dans-labs/harvesting-docs/blob/master/README.md) for installation with `uv`.
 
 ### Command line
 
@@ -88,7 +88,7 @@ uv run oai-pmh records https://demo.dataverse.org/oai -o ./records \
   -m oai_datacite --set controlTestSet --from 2026-01-01
 ```
 
-The identifiers file can be used as input for the [Export API](ExportAPI.md) client (`uv run dv-export-api -f ./data/pids.txt`), which gives the two step process described in the [Overview](Overview.md). The [records](../records) directory contains example output.
+The identifiers file can be used as input for the [Export API](ExportAPI.md) client (`uv run dv-export-api -f ./data/pids.txt`), which gives the two step process described in the [Overview](Overview.md). The [records](https://github.com/Dans-labs/harvesting-docs/tree/master/records) directory contains example output.
 
 ### Python
 
@@ -115,7 +115,7 @@ for identifier in client.iter_identifiers(metadata_prefix="oai_datacite", oai_se
 record = client.get_record("doi:10.5072/FK2/HJVOXL", metadata_prefix="oai_datacite")
 ```
 
-The client sets a request timeout, retries throttled or temporarily failing responses (HTTP 429, 502, 503, 504) and raises `OAIError` for OAI-PMH error codes. The tests are in [tests/test_oai_pmh.py](../tests/test_oai_pmh.py).
+The client sets a request timeout, retries throttled or temporarily failing responses (HTTP 429, 502, 503, 504) and raises `OAIError` for OAI-PMH error codes. The tests are in [tests/test_oai_pmh.py](https://github.com/Dans-labs/harvesting-docs/blob/master/tests/test_oai_pmh.py).
 
 ## Links
 

@@ -44,3 +44,6 @@ records/
 records/*
 exports/
 exports/*
+
+# MkDocs build output
+site/

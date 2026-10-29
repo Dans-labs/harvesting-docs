@@ -65,7 +65,7 @@ You need the PIDs of the datasets first. Possible sources:
 
 ## Using the code in this repository
 
-The client is in [src/harvesting/dv-export-api.py](../src/harvesting/dv-export-api.py) and the command-line interface in [src/harvesting/dv-export-api-cli.py](../src/harvesting/dv-export-api-cli.py). See the [README](../README.md) for installation with `uv`. The tests are in [tests/test_dv_export_api.py](../tests/test_dv_export_api.py).
+The client is in [src/harvesting/dv-export-api.py](https://github.com/Dans-labs/harvesting-docs/blob/master/src/harvesting/dv-export-api.py) and the command-line interface in [src/harvesting/dv-export-api-cli.py](https://github.com/Dans-labs/harvesting-docs/blob/master/src/harvesting/dv-export-api-cli.py). See the [README](https://github.com/Dans-labs/harvesting-docs/blob/master/README.md) for installation with `uv`. The tests are in [tests/test_dv_export_api.py](https://github.com/Dans-labs/harvesting-docs/blob/master/tests/test_dv_export_api.py).
 
 ### Command line
 

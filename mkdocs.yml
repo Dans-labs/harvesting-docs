@@ -1,0 +1,43 @@
+site_name: Harvesting Dataverse Metadata
+site_description: Documentation on harvesting metadata from Dataverse repositories
+site_url: https://dans-labs.github.io/harvesting-docs/
+repo_url: https://github.com/Dans-labs/harvesting-docs
+repo_name: Dans-labs/harvesting-docs
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Overview: Overview.md
+  - OAI-PMH: OAI-PMH.md
+  - Export API: ExportAPI.md
+  - Search API: SearchAPI.md
+  - Solr: Solr.md
+  - Postgres: Postgres.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences

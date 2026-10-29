@@ -106,3 +106,39 @@ For more details on the harvesting concepts and available APIs, see [docs/Overvi
 
 - OAI-PMH: <https://www.openarchives.org/pmh/>
 
+## Notes for developers
+
+### Tests
+
+```bash
+uv run pytest
+```
+
+### Building the code
+
+The package uses the `uv_build` backend. Build the source distribution and wheel into `dist/`:
+
+```bash
+uv build
+```
+
+### Documentation site
+
+The documentation in [docs/](docs/) is published with [MkDocs](https://www.mkdocs.org/) and the [Material theme](https://squidfunk.github.io/mkdocs-material/); the configuration is in `mkdocs.yml`. The dependencies are in the `docs` dependency group.
+
+Preview the site locally at <http://127.0.0.1:8000> (it reloads when files change):
+
+```bash
+uv run --only-group docs mkdocs serve
+```
+
+Build the site into `site/` and fail on broken links, as the CI does:
+
+```bash
+uv run --only-group docs mkdocs build --strict
+```
+
+The GitHub Actions workflow `.github/workflows/docs.yml` builds and deploys the site to GitHub Pages when changes to the docs are pushed to `master`. The repository's Pages source must be set to **GitHub Actions**.
+
+When adding a page, put it in `docs/` and add it to the `nav` section of `mkdocs.yml`. Link to files outside `docs/` (source code, tests) with full GitHub URLs, because relative links to them break on the site.
+
