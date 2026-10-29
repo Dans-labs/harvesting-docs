@@ -9,7 +9,7 @@ The [DANS](https://dans.knaw.nl/en/) archival systems are implemented using the 
 Internally, the system uses [Apache Solr](https://solr.apache.org/) for the search index and [PostgreSQL](https://www.postgresql.org/) for the database (which holds all metadata). For people who can access those internals, mostly technicians who do the maintenance, it is also possible to use those directly.
 
 
-## [Read the docs...](docs/Overview.md)
+## [Read the docs (Github pages)...](https://dans-labs.github.io/harvesting-docs/)
 
 ## Prerequisites
 
