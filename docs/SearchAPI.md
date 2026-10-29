@@ -4,8 +4,9 @@ The Dataverse Search API is useful when you need a filtered selection of dataset
 instead of the complete contents of an archive. The official documentation is in
 the [Dataverse API Guide](https://guides.dataverse.org/en/latest/api/search.html).
 
-The examples below use `https://dataverse.nl` as the Dataverse installation. Replace
-it with the URL of the installation you want to query.
+The examples below use `https://dataverse.nl` as the Dataverse installation. Replace it with the URL of the installation you want to query.
+
+**Note:** Later Dataverse versions enforce CORS restrictions, so client-side (browser JavaScript) queries to the Search API are mostly not possible. Make the requests from a server-side script instead.
 
 ## First query
 
