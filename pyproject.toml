@@ -28,3 +28,6 @@ dev = [
 docs = [
     "mkdocs-material>=9.8.0",
 ]
+explore = [
+    "pymongo>=4.9",
+]
