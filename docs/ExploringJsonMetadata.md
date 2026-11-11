@@ -60,6 +60,37 @@ The first code cell prints the number of documents in the collection; if it prin
 
 The pipeline only looks at `datasetVersion.metadataBlocks.citation.fields`, so it expects Dataverse JSON exports (`dataverse_json`), not other formats.
 
+## Notebook: co-worker network
+
+`src/exploring/json-metadata/coworker_network.ipynb` builds a network of people who worked on the same dataset, using the `people.csv` produced by the authors and contributors notebook. It does not need MongoDB.
+
+Two people are linked when they appear on the same dataset (the same `_source_file`); the link weight is the number of datasets they share. Two graphs are built:
+
+- **Co-author graph**: both are authors of the dataset.
+- **Collaboration graph**: both appear on the dataset as author or contributor.
+
+The notebook prints network statistics (connected components, most connected people, strongest pairs), draws static plots with communities highlighted, can zoom in on a single person (`draw_ego("name fragment")`) and shows an interactive graph.
+
+To run it:
+
+1. Run `authors_contributors.ipynb` first, so that `data/people.csv` exists.
+2. Install the dependencies (`networkx`, `matplotlib`, `pyvis`, `pandas`, `ipykernel`) with `uv sync --group explore`.
+3. Open the notebook in VS Code, select the `.venv` kernel and **Run All**, or start JupyterLab as shown above with `coworker_network.ipynb` as the argument.
+
+Output is written to `data/` (git-ignored):
+
+| File | Content |
+| --- | --- |
+| `coworker_edges.csv` | One row per pair of people with the number of shared datasets |
+| `coworkers.gexf` | The collaboration graph, for opening in [Gephi](https://gephi.org/) |
+| `coworkers.html` | Interactive graph (also shown inline); loads its JavaScript from a CDN, so it needs internet access |
+
+Notes:
+
+- People are identified by their name (lowercased), so spelling variants of the same person are counted as different people.
+- Datasets with more than `MAX_PEOPLE_PER_DATASET` (50) people are skipped, because the number of pairs grows quadratically.
+- The static plots only show the strongest part of the network (`top_n`, `min_weight`); adjust these parameters in the `draw` calls to see more or less.
+
 ## Other tools
 
 You can also browse the data with [MongoDB Compass](https://www.mongodb.com/products/tools/compass) at `mongodb://localhost:27017`, or with `mongosh` inside the container: `docker exec -it mongodb mongosh json_inspect`.

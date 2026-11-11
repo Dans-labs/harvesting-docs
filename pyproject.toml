@@ -32,4 +32,7 @@ explore = [
     "pymongo>=4.9",
     "pandas>=2.2",
     "ipykernel>=6.29",
+    "networkx>=3.3",
+    "matplotlib>=3.9",
+    "pyvis>=0.3.2",
 ]
