@@ -30,4 +30,6 @@ docs = [
 ]
 explore = [
     "pymongo>=4.9",
+    "pandas>=2.2",
+    "ipykernel>=6.29",
 ]

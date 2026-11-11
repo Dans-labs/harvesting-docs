@@ -42,6 +42,24 @@ docker compose down -v   # removes the data volume
 
 Stop the database (keeping data) with `docker compose down`.
 
+## Notebook: authors and contributors
+
+`src/exploring/json-metadata/authors_contributors.ipynb` queries the loaded Dataverse JSON with a MongoDB aggregation pipeline and builds a pandas DataFrame with one row per author or contributor (name, affiliation, identifier such as ORCID, source file). It then shows a few summaries, such as contributors by type, top affiliations and most frequent people.
+
+To run it:
+
+1. Start MongoDB and load the data as described above (the notebook reads `json_inspect.docs` and does not load anything itself).
+2. Install the dependencies (`pymongo`, `pandas`, `ipykernel`) with `uv sync --group explore`.
+3. Open the notebook in VS Code and select the `.venv` kernel (**Select Kernel** > **Python Environments** > `.venv`), then **Run All**. Or start Jupyter from the terminal:
+
+    ```bash
+    uv run --group explore --with jupyterlab jupyter lab src/exploring/json-metadata/authors_contributors.ipynb
+    ```
+
+The first code cell prints the number of documents in the collection; if it prints `0`, the data has not been loaded yet. The last cell writes `people.csv` to the `data/` directory in the repository root (git-ignored); it is optional and can be skipped.
+
+The pipeline only looks at `datasetVersion.metadataBlocks.citation.fields`, so it expects Dataverse JSON exports (`dataverse_json`), not other formats.
+
 ## Other tools
 
 You can also browse the data with [MongoDB Compass](https://www.mongodb.com/products/tools/compass) at `mongodb://localhost:27017`, or with `mongosh` inside the container: `docker exec -it mongodb mongosh json_inspect`.
