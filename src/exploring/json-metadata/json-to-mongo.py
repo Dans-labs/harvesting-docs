@@ -6,9 +6,11 @@ Setup:
     docker compose up -d   # in this directory
 
 Usage:
-    python json-to-mongo.py load    ./data
-    python json-to-mongo.py inspect
-    python json-to-mongo.py find '{"status": "error"}'
+    python json-to-mongo.py [--collection-name NAME] load    ./data
+    python json-to-mongo.py [--collection-name NAME] inspect
+    python json-to-mongo.py [--collection-name NAME] find '{"status": "error"}'
+
+The collection name defaults to "docs".
 """
 import argparse
 import json
@@ -109,13 +111,16 @@ def find(query: str, coll, limit: int = 5):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--collection-name", "--collection_name", dest="collection_name",
+                    default=COLL_NAME,
+                    help="MongoDB collection to use (default: %(default)s)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("load").add_argument("directory")
     sub.add_parser("inspect")
     sub.add_parser("find").add_argument("query")
     args = ap.parse_args()
 
-    coll = MongoClient(MONGO_URI)[DB_NAME][COLL_NAME]
+    coll = MongoClient(MONGO_URI)[DB_NAME][args.collection_name]
     if args.cmd == "load":
         load(args.directory, coll)
     elif args.cmd == "inspect":
